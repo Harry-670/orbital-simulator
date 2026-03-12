@@ -1,66 +1,84 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 
 G    = 4.302e-6
 M_BH = 4.0e6
 V_H  = 220.0
 EPS  = 0.05
 R_D  = 3.0
-# disc mass sets the surface density
-M_DISC = 5.0e10  # M_sun  (Milky Way stellar disc mass)
+
+N     = 1500
+DT    = 0.005    # kpc/(km/s) ~ 4.9 Myr
+STEPS = 1200
+KPC_KMS_TO_GYR = 0.9778
+
+rng = np.random.default_rng(42)
+
+# sample r from Sigma(r) ∝ r exp(-r/R_D) using CDF inversion
+r_grid = np.linspace(0.3, 14.0, 50000)
+pdf    = r_grid * np.exp(-r_grid / R_D)
+cdf    = np.cumsum(pdf); cdf /= cdf[-1]
+r = np.interp(rng.uniform(0, 1, N), cdf, r_grid)
+theta = rng.uniform(0, 2 * np.pi, N)
 
 def v_circ(r):
     return np.sqrt(G * M_BH / np.maximum(r, EPS) + V_H**2)
 
-def kappa(r):
-    return np.sqrt(G * M_BH / np.maximum(r, EPS)**3 + 2 * V_H**2 / r**2)
+# initial velocities: circular + 5% radial dispersion
+vc = v_circ(r)
+sigma_v = 0.05 * vc
+vr = rng.normal(0, sigma_v)
+vt = vc + rng.normal(0, sigma_v)
 
-def sigma_surface(r):
-    # exponential disc: Sigma(r) = M/(2*pi*R_D^2) * exp(-r/R_D)
-    return M_DISC / (2 * np.pi * R_D**2) * np.exp(-r / R_D)
+pos = np.column_stack([r * np.cos(theta), r * np.sin(theta)])
+vel = np.column_stack([
+    -vt * np.sin(theta) + vr * np.cos(theta),
+     vt * np.cos(theta) + vr * np.sin(theta)
+])
 
-def toomre_Q(r, sigma_r):
-    # Q = sigma_r * kappa / (pi * G * Sigma)
-    # sigma_r: radial velocity dispersion [km/s]
-    return sigma_r * kappa(r) / (np.pi * G * sigma_surface(r))
+def accel(pos):
+    r_mag2 = pos[:, 0]**2 + pos[:, 1]**2 + EPS**2
+    r_mag  = np.sqrt(r_mag2)
+    # BH + isothermal halo
+    a_bh  = -G * M_BH / (r_mag2 * r_mag)[:, None] * pos
+    a_hal = -V_H**2  / r_mag2[:, None] * pos
+    return a_bh + a_hal
 
-r_arr = np.linspace(0.5, 15, 300)
+print("running disc simulation...")
+acc = accel(pos)
+frames = []
+L_list = []
 
-# compute sigma_r needed for marginal stability Q=1
-sigma_Q1 = np.pi * G * sigma_surface(r_arr) / kappa(r_arr)
+for n in range(STEPS):
+    pos += vel * DT + 0.5 * acc * DT**2
+    acc_new = accel(pos)
+    vel += 0.5 * (acc + acc_new) * DT
+    acc = acc_new
 
-print("Radial dispersion for Q=1:")
-for r_check in [2, 4, 8]:
-    idx = np.argmin(np.abs(r_arr - r_check))
-    print(f"  r={r_check} kpc: sigma_r = {sigma_Q1[idx]:.1f} km/s")
+    L_list.append(np.mean(pos[:, 0] * vel[:, 1] - pos[:, 1] * vel[:, 0]))
 
-sigma_r_actual = 40.0  # km/s  typical Milky Way thin disc
+    if n % 12 == 0:
+        frames.append(pos.copy())
 
-Q_arr = toomre_Q(r_arr, sigma_r_actual)
+t_total = STEPS * DT * KPC_KMS_TO_GYR
+print(f"done - {STEPS} steps = {t_total:.2f} Gyr, {len(frames)} frames")
 
-fig, axes = plt.subplots(1, 2, figsize=(13, 5), facecolor='#060a12')
-ax1, ax2 = axes
-for ax in axes:
-    ax.set_facecolor('#060a12'); ax.tick_params(colors='#8B949E')
-    for sp in ax.spines.values(): sp.set_edgecolor('#21262D')
+L0 = L_list[0]
+L_drift = np.array([(L - L0) / abs(L0) * 100 for L in L_list])
+print(f"Angular momentum drift: max {np.max(np.abs(L_drift)):.4f}%")
 
-ax1.semilogy(r_arr, sigma_surface(r_arr), color='#4CC9F0', lw=1.5)
-ax1.set_xlabel("r (kpc)", color='#8B949E')
-ax1.set_ylabel("Σ(r)  [M☉/kpc²]", color='#8B949E')
-ax1.set_title("Exponential surface density  Σ ∝ exp(−r/Rd)", color='white', fontweight='bold')
-ax1.grid(linestyle='--', alpha=0.15, color='white')
+fig, ax = plt.subplots(figsize=(7, 7), facecolor='black')
+ax.set_facecolor('black')
+sc = ax.scatter(frames[0][:, 0], frames[0][:, 1], s=0.5, c='white', alpha=0.5)
+ax.set_xlim(-15, 15); ax.set_ylim(-15, 15)
+ax.set_aspect('equal'); ax.axis('off')
+t_txt = ax.text(-14, 13, "", color='white', fontsize=9)
 
-ax2.plot(r_arr, Q_arr, color='white', lw=1.6, label=f'Q  (σᵣ={sigma_r_actual} km/s)')
-ax2.axhline(1.0, color='#E63946', lw=1.0, linestyle='--', label='Q = 1  (marginal stability)')
-ax2.fill_between(r_arr, 0, Q_arr, where=(Q_arr < 1), alpha=0.2, color='red', label='unstable Q < 1')
-ax2.fill_between(r_arr, 0, Q_arr, where=(Q_arr >= 1), alpha=0.1, color='#4CC9F0', label='stable Q ≥ 1')
-ax2.set_ylim(0, 6)
-ax2.set_xlabel("r (kpc)", color='#8B949E')
-ax2.set_ylabel("Toomre Q", color='#8B949E')
-ax2.set_title("Toomre Q stability parameter  Q = σᵣκ / πGΣ", color='white', fontweight='bold')
-ax2.legend(facecolor='#0d1117', labelcolor='white', fontsize=8)
-ax2.grid(linestyle='--', alpha=0.15, color='white')
+def update(i):
+    sc.set_offsets(frames[i])
+    t_txt.set_text(f"t = {i*12*DT*KPC_KMS_TO_GYR*1e3:.0f} Myr")
+    return [sc, t_txt]
 
-plt.tight_layout()
-plt.savefig("toomre_Q.png", dpi=150, bbox_inches='tight', facecolor='#060a12')
+ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=30, blit=True)
 plt.show()
