@@ -100,7 +100,7 @@ for n in range(STEPS):
     L = np.mean(pos[:, 0] * vel[:, 1] - pos[:, 1] * vel[:, 0])
     L_arr.append(L)
 
-    if n % 12 == 0:
+    if n % 6 == 0:
         frames.append(pos.copy())
         t_Gyr.append(t * KPC_KMS_TO_GYR)
 
@@ -153,10 +153,12 @@ pos_last = frames[-1]
 r_last   = np.sqrt(pos_last[:, 0]**2 + pos_last[:, 1]**2)
 sc = ax_disc.scatter(pos_last[:, 0], pos_last[:, 1],
                      s=0.8, c=r_last, cmap='plasma', vmin=0, vmax=12, alpha=0.7)
-ax_disc.set_xlim(-13, 13); ax_disc.set_ylim(-13, 13)
+ax_disc.set_xlim(-16, 16); ax_disc.set_ylim(-16, 16)
 ax_disc.set_aspect('equal'); ax_disc.axis('off')
-ax_disc.set_title(f"Galactic disc  t = {t_Gyr[-1]*1e3:.0f} Myr  (N={N}, rotating bar Ω_b={OMEGA_B} km/s/kpc)",
-                  color='white', fontsize=11, fontweight='bold')
+disc_title = ax_disc.text(0.5, 1.005,
+    f"Galactic disc  t = {t_Gyr[-1]*1e3:.0f} Myr  (N={N}, rotating bar Ω_b={OMEGA_B} km/s/kpc)",
+    transform=ax_disc.transAxes, color='white', fontsize=11, fontweight='bold',
+    ha='center', va='bottom')
 cb = plt.colorbar(sc, ax=ax_disc, fraction=0.03, pad=0.02)
 cb.set_label("r (kpc)", color='#8B949E'); cb.ax.yaxis.set_tick_params(color='#8B949E')
 plt.setp(cb.ax.yaxis.get_ticklabels(), color='#8B949E')
@@ -214,6 +216,7 @@ ax_L.set_title("Angular momentum conservation", color='white', fontsize=9, fontw
 ax_L.grid(linestyle='--', alpha=0.15, color='white')
 ax_L.text(0.97, 0.05, f"max drift = {np.max(np.abs(L_drift)):.4f}%",
           transform=ax_L.transAxes, color='#8B949E', fontsize=7.5, ha='right')
+vline_L = ax_L.axvline(t_Gyr[0] * 1e3, color='white', lw=1.0, alpha=0.75, zorder=5)
 
 # epicyclic frequency
 Omega_arr = v_circ(r_plot) / r_plot
@@ -233,18 +236,18 @@ fig.suptitle("Galactic Disc Simulator — isothermal halo + rotating bar", color
 plt.savefig("galaxy_analysis.png", dpi=150, bbox_inches='tight', facecolor='#060a12')
 print("saved galaxy_analysis.png")
 
-# ── animation ─────────────────────────────────────────────────────────────────
-fig2, ax2 = plt.subplots(figsize=(7, 7), facecolor='black')
-ax2.set_facecolor('black'); ax2.axis('off')
-ax2.set_xlim(-13, 13); ax2.set_ylim(-13, 13); ax2.set_aspect('equal')
-sc2 = ax2.scatter(frames[0][:, 0], frames[0][:, 1], s=0.7, c='white', alpha=0.55)
-txt = ax2.text(-12, 11.5, "", color='white', fontsize=9)
-ax2.set_title("Galactic disc — rotating bar spiral", color='white', pad=4)
+# ── animation (reuses main figure) ────────────────────────────────────────────
+sc.set_offsets(frames[0])
+sc.set_array(np.sqrt(frames[0][:, 0]**2 + frames[0][:, 1]**2))
 
 def update(i):
-    sc2.set_offsets(frames[i])
-    txt.set_text(f"t = {t_Gyr[i]*1e3:.0f} Myr")
-    return [sc2, txt]
+    p = frames[i]
+    sc.set_offsets(p)
+    sc.set_array(np.sqrt(p[:, 0]**2 + p[:, 1]**2))
+    vline_L.set_xdata([t_Gyr[i] * 1e3, t_Gyr[i] * 1e3])
+    disc_title.set_text(
+        f"Galactic disc  t = {t_Gyr[i]*1e3:.0f} Myr  (N={N}, rotating bar Ω_b={OMEGA_B} km/s/kpc)")
+    return [sc, vline_L, disc_title]
 
-ani = animation.FuncAnimation(fig2, update, frames=len(frames), interval=35, blit=True)
+ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=16, blit=True)
 plt.show()
