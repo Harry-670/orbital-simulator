@@ -84,13 +84,29 @@ Running the script produces a 6-panel figure (`galaxy_analysis.png`):
 
 ```bash
 pip install numpy matplotlib
-python galaxy_disc.py
+python main.py
 ```
 
 Outputs `galaxy_analysis.png` and opens an interactive animated window.
 
 ---
 
+## Project Structure
+
+```
+├── main.py                   # entry point
+├── sim/
+│   ├── physics.py            # potentials, forces, constants
+│   ├── initial_conditions.py # particle sampling
+│   ├── integrator.py         # velocity verlet loop
+│   └── plotting.py           # figures and animation
+└── paper/
+    ├── paper.tex             # LaTeX source
+    └── paper.pdf             # compiled write-up
+```
+
+---
+
 ## Paper
 
-A short technical write-up covering the physics, numerical methods, and results is included as [`paper.pdf`](paper.pdf).
+A short technical write-up covering the physics, numerical methods, and results is included as [`paper/paper.pdf`](paper/paper.pdf).
